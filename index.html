@@ -1,0 +1,723 @@
+<title>간섭 검사기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg:#ECEEED;
+    --surface:#FFFFFF;
+    --surface-2:#F5F6F5;
+    --border:#D3D7D4;
+    --ink:#16202A;
+    --ink-muted:#5B6670;
+    --accent:#0E6E7A;
+    --accent-ink:#FFFFFF;
+    --ok:#2F7D4F;
+    --ok-bg:#E4F3E9;
+    --critical:#C0392B;
+    --critical-bg:#FBE7E4;
+    --grid-a:#8b9490;
+    --grid-b:#4a524e;
+    --canvas-bg:#F4F6F5;
+    --shadow: 0 1px 2px rgba(20,30,30,0.07), 0 6px 16px rgba(20,30,30,0.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#12181D; --surface:#1B232A; --surface-2:#212B33; --border:#2E3A43;
+      --ink:#E7EDF0; --ink-muted:#96A5AE; --accent:#3FC7D6; --accent-ink:#0B2226;
+      --ok:#4CAF7D; --ok-bg:#17301F; --critical:#E5695B; --critical-bg:#3A1B18;
+      --grid-a:#4a565d; --grid-b:#232c32; --canvas-bg:#0E1418;
+      --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 20px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#12181D; --surface:#1B232A; --surface-2:#212B33; --border:#2E3A43;
+    --ink:#E7EDF0; --ink-muted:#96A5AE; --accent:#3FC7D6; --accent-ink:#0B2226;
+    --ok:#4CAF7D; --ok-bg:#17301F; --critical:#E5695B; --critical-bg:#3A1B18;
+    --grid-a:#4a565d; --grid-b:#232c32; --canvas-bg:#0E1418;
+    --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 20px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+  }
+  .mono { font-family:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .app { display:flex; flex-direction:column; min-height:100vh; }
+
+  .titleblock {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 20px; border-bottom:2px solid var(--ink); background:var(--surface);
+    gap:16px; flex-wrap:wrap;
+  }
+  .tb-left h1 {
+    margin:0; font-family:'Big Shoulders Display','Arial Narrow',sans-serif;
+    font-size:30px; font-weight:800; text-transform:uppercase; letter-spacing:0.02em;
+    text-wrap: balance;
+  }
+  .tb-sub {
+    margin:2px 0 0; font-family:'IBM Plex Mono',monospace; font-size:11px;
+    letter-spacing:0.12em; color:var(--ink-muted); text-transform:uppercase;
+  }
+  .tb-right { display:flex; align-items:center; gap:14px; }
+  .status-chip {
+    padding:7px 14px; border-radius:4px; font-size:13px; font-weight:600;
+    font-family:'IBM Plex Mono',monospace; white-space:nowrap;
+  }
+  .status-chip.idle { background:var(--surface-2); color:var(--ink-muted); }
+  .status-chip.ok { background:var(--ok-bg); color:var(--ok); }
+  .status-chip.critical { background:var(--critical-bg); color:var(--critical); }
+  .tb-meta { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-muted); }
+  .tb-meta b { color:var(--ink); font-weight:600; }
+
+  .workspace {
+    flex:1; display:grid; grid-template-columns: 1fr 320px; gap:16px;
+    padding:16px 20px; min-height:0;
+  }
+  .viewport-frame {
+    position:relative; background:var(--canvas-bg); border:1px solid var(--border);
+    border-radius:2px; min-height:480px; overflow:hidden;
+  }
+  #canvasHost { position:absolute; inset:0; }
+  #canvasHost canvas { display:block; }
+  .viewport-corner { position:absolute; width:22px; height:22px; border-color:var(--accent); pointer-events:none; }
+  .viewport-corner.tl{top:8px;left:8px;border-top:2px solid;border-left:2px solid;}
+  .viewport-corner.tr{top:8px;right:8px;border-top:2px solid;border-right:2px solid;}
+  .viewport-corner.bl{bottom:8px;left:8px;border-bottom:2px solid;border-left:2px solid;}
+  .viewport-corner.br{bottom:8px;right:8px;border-bottom:2px solid;border-right:2px solid;}
+  .viewport-hint {
+    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-muted);
+    background:var(--surface); padding:4px 10px; border-radius:3px; border:1px solid var(--border);
+    pointer-events:none;
+  }
+
+  .rail { display:flex; flex-direction:column; gap:16px; min-width:0; }
+  .panel {
+    background:var(--surface); border:1px solid var(--border); border-radius:3px;
+    padding:14px 16px; box-shadow:var(--shadow);
+  }
+  .panel h2 {
+    margin:0 0 10px; font-family:'Big Shoulders Display',sans-serif; font-size:15px;
+    text-transform:uppercase; letter-spacing:0.06em; font-weight:700;
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  .panel-count { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-muted); }
+
+  .parts-list, .report-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+  .part-row { display:flex; align-items:center; gap:10px; font-size:13px; }
+  .swatch { width:12px; height:12px; border-radius:2px; flex:none; }
+  .part-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .part-stats { color:var(--ink-muted); font-family:'IBM Plex Mono',monospace; font-size:11px; font-variant-numeric:tabular-nums; flex:none; }
+  .empty-row { color:var(--ink-muted); font-size:12px; }
+
+  .report-row { display:flex; flex-direction:column; gap:4px; padding:9px 11px; border-radius:3px; background:var(--surface-2); }
+  .report-pair { font-size:13px; font-weight:600; }
+  .report-status { font-size:11px; display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; color:var(--ink-muted); }
+  .dot { width:7px; height:7px; border-radius:50%; flex:none; }
+  .dot.ok{background:var(--ok);} .dot.critical{background:var(--critical);}
+  .report-status.is-critical { color:var(--critical); }
+  .report-status.is-ok { color:var(--ok); }
+
+  .hint-panel p { margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-muted); }
+  .hint-panel b { color:var(--ink); font-weight:600; }
+  .hint-panel .mono-inline { font-family:'IBM Plex Mono',monospace; font-size:11.5px; background:var(--surface-2); padding:1px 5px; border-radius:2px; }
+
+  .toolbar {
+    display:flex; align-items:center; gap:10px; padding:12px 20px;
+    border-top:1px solid var(--border); background:var(--surface); flex-wrap:wrap;
+  }
+  .btn {
+    appearance:none; border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+    padding:9px 16px; border-radius:3px; font-family:'Big Shoulders Display',sans-serif;
+    font-size:14px; font-weight:700; letter-spacing:0.03em; cursor:pointer; text-transform:uppercase;
+  }
+  .btn:hover { border-color:var(--accent); }
+  .btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .btn-primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  input[type="file"].visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  .toolbar-note {
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-muted);
+    margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  @media (max-width: 860px) {
+    .workspace { grid-template-columns: 1fr; }
+    .viewport-frame { min-height:360px; }
+    .toolbar-note { margin-left:0; width:100%; }
+  }
+
+  .dim-panel {
+    background:var(--surface); border-bottom:1px solid var(--border);
+    padding:16px 20px; display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;
+  }
+  .dim-group { flex:1 1 320px; min-width:280px; }
+  .dim-group h2 {
+    margin:0 0 10px; font-family:'Big Shoulders Display',sans-serif; font-size:16px;
+    text-transform:uppercase; letter-spacing:0.05em; font-weight:700;
+    display:flex; align-items:baseline; gap:8px;
+  }
+  .dim-tag {
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:0.04em;
+    color:var(--ink-muted); text-transform:none; background:var(--surface-2);
+    padding:2px 7px; border-radius:3px; font-weight:500;
+  }
+  .dim-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px 12px; }
+  .dim-field { display:flex; flex-direction:column; gap:4px; }
+  .dim-field span.label {
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:0.05em;
+    color:var(--ink-muted); text-transform:uppercase;
+  }
+  .dim-input-row { display:flex; align-items:center; gap:6px; }
+  .dim-input-row input {
+    width:100%; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:13px;
+    padding:6px 8px; border:1px solid var(--border); border-radius:3px;
+    background:var(--surface-2); color:var(--ink); font-variant-numeric:tabular-nums;
+  }
+  .dim-input-row input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .dim-input-row .unit { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-muted); flex:none; }
+  .dim-actions {
+    flex:1 1 220px; min-width:220px; display:flex; flex-direction:column; gap:10px;
+    padding-top:2px;
+  }
+  .dim-note { font-size:12px; line-height:1.6; color:var(--ink-muted); margin:0; }
+</style>
+
+<div class="app">
+  <header class="titleblock">
+    <div class="tb-left">
+      <h1>간섭 검사기</h1>
+      <p class="tb-sub">Assembly Interference Check · three.js</p>
+    </div>
+    <div class="tb-right">
+      <span class="tb-meta">파트 <b id="partCount">0</b></span>
+      <span class="status-chip idle" id="statusChip">초기화 중...</span>
+    </div>
+  </header>
+
+  <section class="dim-panel">
+    <div class="dim-group" data-part="material">
+      <h2>재료 <span class="dim-tag">하단 돌기</span></h2>
+      <div class="dim-grid">
+        <label class="dim-field"><span class="label">전체 길이</span><span class="dim-input-row"><input id="m_L" type="number" step="0.1" value="15"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">높이</span><span class="dim-input-row"><input id="m_H" type="number" step="0.1" value="0.5"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">폭</span><span class="dim-input-row"><input id="m_W" type="number" step="0.1" value="3"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">돌기 간격(피치)</span><span class="dim-input-row"><input id="m_pitch" type="number" step="0.1" value="3"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">돌기 길이</span><span class="dim-input-row"><input id="m_toothL" type="number" step="0.1" value="1"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">돌기 높이</span><span class="dim-input-row"><input id="m_toothH" type="number" step="0.1" value="0.3"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">돌기 폭</span><span class="dim-input-row"><input id="m_toothW" type="number" step="0.1" value="3"><span class="unit">cm</span></span></label>
+      </div>
+    </div>
+
+    <div class="dim-group" data-part="stand">
+      <h2>수대 <span class="dim-tag">상단 홀</span></h2>
+      <div class="dim-grid">
+        <label class="dim-field"><span class="label">전체 길이</span><span class="dim-input-row"><input id="s_L" type="number" step="0.1" value="17"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">높이</span><span class="dim-input-row"><input id="s_H" type="number" step="0.1" value="1"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">폭</span><span class="dim-input-row"><input id="s_W" type="number" step="0.1" value="5"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">홀 간격(피치)</span><span class="dim-input-row"><input id="s_pitch" type="number" step="0.1" value="3.5"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">홀 길이</span><span class="dim-input-row"><input id="s_holeL" type="number" step="0.1" value="1.5"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">홀 깊이</span><span class="dim-input-row"><input id="s_holeH" type="number" step="0.1" value="0.2"><span class="unit">cm</span></span></label>
+        <label class="dim-field"><span class="label">홀 폭</span><span class="dim-input-row"><input id="s_holeW" type="number" step="0.1" value="5"><span class="unit">cm</span></span></label>
+      </div>
+    </div>
+
+    <div class="dim-actions">
+      <label class="dim-field"><span class="label">재료 정렬 오프셋(X)</span><span class="dim-input-row"><input id="offsetX" type="number" step="0.1" value="0"><span class="unit">cm</span></span></label>
+      <button class="btn btn-primary" id="generateBtn">치수로 생성 &amp; 검사</button>
+      <p class="dim-note">가정: 돌기/홀은 부품 왼쪽 끝부터 피치 간격으로 배치, 지정한 폭 전체에 걸쳐 있음. 재료는 수대 위에 폭 방향 중앙 정렬, 오프셋으로 길이 방향 위치를 조절합니다.</p>
+    </div>
+  </section>
+
+  <main class="workspace">
+    <section class="viewport-frame">
+      <div id="canvasHost"></div>
+      <div class="viewport-corner tl"></div>
+      <div class="viewport-corner tr"></div>
+      <div class="viewport-corner bl"></div>
+      <div class="viewport-corner br"></div>
+      <div class="viewport-hint">드래그 회전 · 스크롤 확대/축소 · 우클릭 드래그 이동</div>
+    </section>
+
+    <aside class="rail">
+      <section class="panel">
+        <h2>파트 <span class="panel-count" id="partsPanelCount">0</span></h2>
+        <ul class="parts-list" id="partsList"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>간섭 리포트</h2>
+        <ul class="report-list" id="reportList"></ul>
+      </section>
+
+      <section class="panel hint-panel">
+        <h2>모델 내보내기</h2>
+        <p>
+          SolidWorks: <b>Save As</b> → <span class="mono-inline">.glTF / .OBJ / .STL</span><br>
+          Fusion360: <b>File → Export</b> → <span class="mono-inline">.glTF / .OBJ / .STL</span><br>
+          three.js는 STEP을 직접 읽지 못해, 위 포맷으로 내보낸 파일이 필요합니다.
+        </p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="toolbar">
+    <label class="btn btn-primary">
+      파일 불러오기
+      <input type="file" id="fileInput" class="visually-hidden" accept=".glb,.gltf,.obj,.stl" multiple>
+    </label>
+    <button class="btn" id="demoBtn">단순 도형 데모</button>
+    <button class="btn" id="checkBtn">간섭 검사 실행</button>
+    <button class="btn" id="opacityBtn">투명도 토글</button>
+    <button class="btn" id="resetViewBtn">뷰 초기화</button>
+    <span class="toolbar-note" id="toolbarNote"></span>
+  </footer>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js",
+    "three-bvh-csg": "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.18/build/index.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MeshBVH, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
+import { Brush, Evaluator, ADDITION, SUBTRACTION } from 'three-bvh-csg';
+
+const csgEvaluator = new Evaluator();
+
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+
+const PALETTE = ['#0E6E7A', '#B4790E', '#6B5EAE', '#3C7A3E', '#A24A7B', '#3A6EA5'];
+
+const canvasHost = document.getElementById('canvasHost');
+const partsListEl = document.getElementById('partsList');
+const reportListEl = document.getElementById('reportList');
+const statusChip = document.getElementById('statusChip');
+const partCountEl = document.getElementById('partCount');
+const partsPanelCountEl = document.getElementById('partsPanelCount');
+const toolbarNote = document.getElementById('toolbarNote');
+const fileInput = document.getElementById('fileInput');
+const demoBtn = document.getElementById('demoBtn');
+const checkBtn = document.getElementById('checkBtn');
+const opacityBtn = document.getElementById('opacityBtn');
+const resetViewBtn = document.getElementById('resetViewBtn');
+
+let parts = [];
+let opaqueMode = true;
+let nextId = 1;
+
+const scene = new THREE.Scene();
+function paintScene() {
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--canvas-bg').trim();
+  scene.background = new THREE.Color(bg || '#0e1418');
+}
+paintScene();
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 5000);
+camera.position.set(4, 3, 6);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+canvasHost.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x30343a, 1.15));
+const key = new THREE.DirectionalLight(0xffffff, 1.4);
+key.position.set(5, 8, 6);
+scene.add(key);
+
+const grid = new THREE.GridHelper(20, 20, 0x8b9490, 0x4a524e);
+grid.material.transparent = true;
+grid.material.opacity = 0.25;
+scene.add(grid);
+
+scene.add(new THREE.AxesHelper(1.2));
+
+function resize() {
+  const w = canvasHost.clientWidth || 1;
+  const h = canvasHost.clientHeight || 1;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvasHost);
+resize();
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintScene);
+
+function normalizeGeometry(geometry) {
+  const merged = mergeVertices(geometry);
+  merged.computeVertexNormals();
+  return merged;
+}
+
+function addPart(geometry, name, opts = {}) {
+  geometry = normalizeGeometry(geometry);
+  geometry.computeBoundsTree();
+
+  const colorHex = PALETTE[(nextId - 1) % PALETTE.length];
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(colorHex), metalness: 0.1, roughness: 0.55,
+    transparent: true, opacity: opaqueMode ? 1 : 0.55,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  if (opts.position) mesh.position.copy(opts.position);
+  mesh.updateMatrixWorld(true);
+  scene.add(mesh);
+
+  const triCount = Math.round((geometry.index ? geometry.index.count : geometry.attributes.position.count) / 3);
+  const vertCount = geometry.attributes.position.count;
+
+  const part = { id: nextId++, name, mesh, color: colorHex, triCount, vertCount, isDemo: !!opts.isDemo };
+  parts.push(part);
+  renderPartsList();
+  frameAll();
+  return part;
+}
+
+function disposePart(p) {
+  scene.remove(p.mesh);
+  p.mesh.geometry.disposeBoundsTree?.();
+  p.mesh.geometry.dispose();
+  p.mesh.material.dispose();
+}
+
+function clearDemoParts() {
+  parts = parts.filter((p) => {
+    if (p.isDemo) disposePart(p);
+    return !p.isDemo;
+  });
+}
+
+function removeAllParts() {
+  parts.forEach(disposePart);
+  parts = [];
+  renderPartsList();
+  renderReport([]);
+  setStatus('idle', '파트를 불러와 주세요');
+}
+
+function clearHighlights() {
+  parts.forEach((p) => {
+    [...p.mesh.children].forEach((c) => {
+      p.mesh.remove(c);
+      c.geometry.dispose();
+      c.material.dispose();
+    });
+  });
+}
+
+function frameAll() {
+  if (!parts.length) return;
+  const box = new THREE.Box3();
+  parts.forEach((p) => box.expandByObject(p.mesh));
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(size.length() * 0.6, 1);
+  controls.target.copy(center);
+  camera.position.copy(center).add(new THREE.Vector3(radius, radius * 0.75, radius));
+  camera.near = radius / 100;
+  camera.far = radius * 50;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function renderPartsList() {
+  partCountEl.textContent = parts.length;
+  partsPanelCountEl.textContent = parts.length;
+  partsListEl.innerHTML = '';
+  if (!parts.length) {
+    partsListEl.innerHTML = '<li class="empty-row">불러온 파트가 없습니다</li>';
+    return;
+  }
+  parts.forEach((p) => {
+    const li = document.createElement('li');
+    li.className = 'part-row';
+    li.innerHTML = `
+      <span class="swatch" style="background:${p.color}"></span>
+      <span class="part-name" title="${p.name}">${p.name}</span>
+      <span class="part-stats">V ${p.vertCount.toLocaleString()} · F ${p.triCount.toLocaleString()}</span>
+    `;
+    partsListEl.appendChild(li);
+  });
+}
+
+function renderReport(rows) {
+  reportListEl.innerHTML = '';
+  if (!rows.length) {
+    reportListEl.innerHTML = '<li class="empty-row">검사 결과가 여기 표시됩니다</li>';
+    return;
+  }
+  rows.forEach((r) => {
+    const li = document.createElement('li');
+    li.className = 'report-row';
+    li.innerHTML = `
+      <span class="report-pair">${r.pairName}</span>
+      <span class="report-status ${r.hit ? 'is-critical' : 'is-ok'}">
+        <span class="dot ${r.hit ? 'critical' : 'ok'}"></span>
+        ${r.hit ? `간섭 감지 · 삼각형 ${r.count}개` : '간섭 없음'}
+      </span>
+    `;
+    reportListEl.appendChild(li);
+  });
+}
+
+function setStatus(kind, text) {
+  statusChip.className = 'status-chip ' + kind;
+  statusChip.textContent = text;
+}
+
+function buildHighlightMesh(geometry, triIndexSet) {
+  const index = geometry.index;
+  const pos = geometry.attributes.position;
+  const positions = new Float32Array(triIndexSet.size * 9);
+  let o = 0;
+  triIndexSet.forEach((t) => {
+    for (let k = 0; k < 3; k++) {
+      const vi = index.getX(t * 3 + k);
+      positions[o++] = pos.getX(vi);
+      positions[o++] = pos.getY(vi);
+      positions[o++] = pos.getZ(vi);
+    }
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xe2483a, transparent: true, opacity: 0.6, depthTest: true,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    side: THREE.DoubleSide,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function runInterferenceCheck() {
+  if (parts.length < 2) {
+    setStatus('idle', '파트 2개 이상 필요');
+    renderReport([]);
+    return;
+  }
+  clearHighlights();
+  const rows = [];
+  let hitPairs = 0;
+
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = i + 1; j < parts.length; j++) {
+      const A = parts[i], B = parts[j];
+      const boxA = new THREE.Box3().setFromObject(A.mesh);
+      const boxB = new THREE.Box3().setFromObject(B.mesh);
+      const pairName = `${A.name} ↔ ${B.name}`;
+
+      if (!boxA.intersectsBox(boxB)) {
+        rows.push({ pairName, hit: false, count: 0 });
+        continue;
+      }
+
+      const bvhA = A.mesh.geometry.boundsTree;
+      const bvhB = B.mesh.geometry.boundsTree;
+      const matrixBtoA = new THREE.Matrix4().copy(A.mesh.matrixWorld).invert().multiply(B.mesh.matrixWorld);
+      const triA = new Set();
+      const triB = new Set();
+      bvhA.bvhcast(bvhB, matrixBtoA, {
+        intersectsTriangles(triangleA, triangleB, ia, ib) {
+          triA.add(ia);
+          triB.add(ib);
+          return false;
+        },
+      });
+
+      if (triA.size > 0) {
+        hitPairs++;
+        A.mesh.add(buildHighlightMesh(A.mesh.geometry, triA));
+        B.mesh.add(buildHighlightMesh(B.mesh.geometry, triB));
+        rows.push({ pairName, hit: true, count: triA.size + triB.size });
+      } else {
+        rows.push({ pairName, hit: false, count: 0 });
+      }
+    }
+  }
+
+  renderReport(rows);
+  setStatus(hitPairs > 0 ? 'critical' : 'ok', hitPairs > 0 ? `간섭 ${hitPairs}건 감지` : '간섭 없음');
+  toolbarNote.textContent = `검사 완료 · 파트 ${parts.length}개 · 조합 ${rows.length}쌍`;
+}
+
+function numVal(id) {
+  return parseFloat(document.getElementById(id).value) || 0;
+}
+
+function computeFeatureCenters(partLength, pitch, featureLen) {
+  const centers = [];
+  if (pitch <= 0 || featureLen <= 0) return centers;
+  const left = -partLength / 2;
+  let c = left + featureLen / 2;
+  while (c + featureLen / 2 <= partLength / 2 + 1e-6) {
+    centers.push(c);
+    c += pitch;
+  }
+  return centers;
+}
+
+function buildMaterialBrush(p, offsetX, standTopY) {
+  const bottomY = standTopY;
+  const centerY = bottomY + p.H / 2;
+
+  let current = new Brush(new THREE.BoxGeometry(p.L, p.H, p.W));
+  current.position.set(offsetX, centerY, 0);
+  current.updateMatrixWorld(true);
+
+  const centers = computeFeatureCenters(p.L, p.pitch, p.toothL);
+  centers.forEach((cx) => {
+    const tooth = new Brush(new THREE.BoxGeometry(p.toothL, p.toothH, p.toothW));
+    tooth.position.set(offsetX + cx, bottomY - p.toothH / 2, 0);
+    tooth.updateMatrixWorld(true);
+    current.updateMatrixWorld(true);
+    current = csgEvaluator.evaluate(current, tooth, ADDITION);
+  });
+
+  return { geometry: current.geometry, featureCount: centers.length };
+}
+
+function buildStandBrush(p) {
+  const centerY = p.H / 2;
+  const cutMargin = Math.max(p.holeH * 0.5, 0.05);
+
+  let current = new Brush(new THREE.BoxGeometry(p.L, p.H, p.W));
+  current.position.set(0, centerY, 0);
+  current.updateMatrixWorld(true);
+
+  const centers = computeFeatureCenters(p.L, p.pitch, p.holeL);
+  centers.forEach((cx) => {
+    const holeH = Math.min(p.holeH, p.H) + cutMargin;
+    const hole = new Brush(new THREE.BoxGeometry(p.holeL, holeH, p.holeW));
+    hole.position.set(cx, p.H - p.holeH / 2 + cutMargin / 2, 0);
+    hole.updateMatrixWorld(true);
+    current.updateMatrixWorld(true);
+    current = csgEvaluator.evaluate(current, hole, SUBTRACTION);
+  });
+
+  return { geometry: current.geometry, featureCount: centers.length, topY: p.H };
+}
+
+function generateFromDimensions() {
+  const m = {
+    L: numVal('m_L'), H: numVal('m_H'), W: numVal('m_W'),
+    pitch: numVal('m_pitch'), toothL: numVal('m_toothL'), toothH: numVal('m_toothH'), toothW: numVal('m_toothW'),
+  };
+  const s = {
+    L: numVal('s_L'), H: numVal('s_H'), W: numVal('s_W'),
+    pitch: numVal('s_pitch'), holeL: numVal('s_holeL'), holeH: numVal('s_holeH'), holeW: numVal('s_holeW'),
+  };
+  const offsetX = numVal('offsetX');
+
+  removeAllParts();
+
+  const standResult = buildStandBrush(s);
+  addPart(standResult.geometry, `수대 (${s.L}×${s.H}×${s.W}cm · 홀 ${standResult.featureCount}개)`, {});
+
+  const matResult = buildMaterialBrush(m, offsetX, standResult.topY);
+  addPart(matResult.geometry, `재료 (${m.L}×${m.H}×${m.W}cm · 돌기 ${matResult.featureCount}개)`, {});
+
+  runInterferenceCheck();
+  toolbarNote.textContent = `파라메트릭 생성 완료 · 돌기 ${matResult.featureCount}개 · 홀 ${standResult.featureCount}개 · 오프셋 ${offsetX}cm`;
+}
+
+function loadDemo() {
+  removeAllParts();
+  addPart(new THREE.BoxGeometry(2, 1.5, 1.5, 4, 4, 4), '예제 A · Box (데모)', {
+    isDemo: true, position: new THREE.Vector3(-0.55, 0, 0),
+  });
+  addPart(new THREE.SphereGeometry(1, 32, 24), '예제 B · Sphere (데모)', {
+    isDemo: true, position: new THREE.Vector3(0.65, 0, 0),
+  });
+  toolbarNote.textContent = '데모 예제 · 실제 모델을 불러오면 대체됩니다';
+  runInterferenceCheck();
+}
+
+function extensionOf(name) {
+  return name.slice(name.lastIndexOf('.')).toLowerCase();
+}
+
+function loadFileAsync(file) {
+  return new Promise((resolve) => {
+    const ext = extensionOf(file.name);
+    const url = URL.createObjectURL(file);
+    const done = () => { URL.revokeObjectURL(url); resolve(); };
+    const onError = (err) => { console.error(err); toolbarNote.textContent = `${file.name} 로드 실패`; done(); };
+
+    if (ext === '.glb' || ext === '.gltf') {
+      new GLTFLoader().load(url, (gltf) => {
+        let count = 0;
+        gltf.scene.traverse((child) => {
+          if (child.isMesh) { count++; addPart(child.geometry.clone(), file.name + (count > 1 ? ' #' + count : '')); }
+        });
+        done();
+      }, undefined, onError);
+    } else if (ext === '.obj') {
+      new OBJLoader().load(url, (obj) => {
+        let count = 0;
+        obj.traverse((child) => {
+          if (child.isMesh) { count++; addPart(child.geometry.clone(), file.name + (count > 1 ? ' #' + count : '')); }
+        });
+        done();
+      }, undefined, onError);
+    } else if (ext === '.stl') {
+      new STLLoader().load(url, (geometry) => { addPart(geometry, file.name); done(); }, undefined, onError);
+    } else {
+      toolbarNote.textContent = `지원하지 않는 형식: ${ext}`;
+      done();
+    }
+  });
+}
+
+fileInput.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  removeAllParts();
+  renderPartsList();
+  toolbarNote.textContent = `${files.length}개 파일 불러오는 중...`;
+  await Promise.all(files.map(loadFileAsync));
+  runInterferenceCheck();
+  fileInput.value = '';
+});
+
+demoBtn.addEventListener('click', loadDemo);
+checkBtn.addEventListener('click', runInterferenceCheck);
+resetViewBtn.addEventListener('click', frameAll);
+document.getElementById('generateBtn').addEventListener('click', generateFromDimensions);
+opacityBtn.addEventListener('click', () => {
+  opaqueMode = !opaqueMode;
+  parts.forEach((p) => { p.mesh.material.opacity = opaqueMode ? 1 : 0.55; });
+  opacityBtn.textContent = opaqueMode ? '투명도 토글' : '투명도 토글 (ON)';
+});
+
+setStatus('idle', '초기화 중...');
+renderPartsList();
+renderReport([]);
+generateFromDimensions();
+</script>
